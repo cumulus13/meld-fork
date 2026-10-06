@@ -227,6 +227,18 @@ class MeldBufferData(GObject.GObject):
     def current_on_disk(self):
         return self._mtime == self._disk_mtime
 
+    def changed_on_disk(self) -> bool:
+        """Whether the file on disk differs from what was loaded or saved
+
+        Unlike `current_on_disk`, this asks the filesystem directly rather
+        than relying on the file monitor having delivered an event, which
+        can be missed or delayed (e.g., on network filesystems).
+        """
+        if not self._gfile:
+            return False
+        mtime = self._query_mtime(self._gfile)
+        return mtime is not None and mtime != self._mtime
+
 
 class BufferLines:
     """Gtk.TextBuffer shim with line-based access and optional filtering

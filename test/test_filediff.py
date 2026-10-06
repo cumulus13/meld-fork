@@ -167,3 +167,68 @@ def test_focus_pane_action(target, called):
     filediff.num_panes = 3
     FileDiff.action_focus_pane(filediff, None, GLib.Variant.new_int32(target))
     assert filediff._switch_pane.called == called
+
+
+def _filediff_mock(num_panes=2):
+    from meld.filediff import FileDiff
+
+    filediff = mock.MagicMock(spec=FileDiff)
+    filediff.num_panes = num_panes
+    filediff.textbuffer = [mock.Mock() for _ in range(num_panes)]
+    # Behave as if the user confirmed discarding any unsaved changes
+    filediff.confirm_unsaved_change_action = lambda on_confirm, buffers=None: (
+        on_confirm()
+    )
+    return filediff
+
+
+def test_revert_pane_reloads_pane():
+    # Regression test: the "File has changed on disk" info bar's Reload
+    # button called a removed method (check_unsaved_changes), so nothing
+    # happened when it was clicked.
+    from meld.filediff import FileDiff
+
+    filediff = _filediff_mock()
+    FileDiff.revert_pane(filediff, 1)
+
+    data = filediff.textbuffer[1].data
+    filediff.set_file.assert_called_once_with(1, data.gfile, data.encoding)
+
+
+def test_revert_pane_confirms_before_discarding():
+    from meld.filediff import FileDiff
+
+    filediff = _filediff_mock()
+    filediff.confirm_unsaved_change_action = mock.Mock()
+    FileDiff.revert_pane(filediff, 0)
+
+    filediff.confirm_unsaved_change_action.assert_called_once()
+    filediff.set_file.assert_not_called()
+
+
+def test_refresh_without_disk_changes_only_rediffs():
+    from meld.filediff import FileDiff
+
+    filediff = _filediff_mock()
+    for buf in filediff.textbuffer:
+        buf.data.changed_on_disk.return_value = False
+    FileDiff.action_refresh(filediff)
+
+    filediff.refresh_comparison.assert_called_once()
+    filediff.set_files.assert_not_called()
+
+
+def test_refresh_reloads_only_files_changed_on_disk():
+    from meld.filediff import FileDiff
+
+    filediff = _filediff_mock(3)
+    for buf, changed in zip(filediff.textbuffer, (True, False, True)):
+        buf.data.changed_on_disk.return_value = changed
+    FileDiff.action_refresh(filediff)
+
+    filediff.refresh_comparison.assert_not_called()
+    gfiles = filediff.set_files.call_args.args[0]
+    encodings = filediff.set_files.call_args.kwargs["encodings"]
+    data = [buf.data for buf in filediff.textbuffer]
+    assert gfiles == [data[0].gfile, None, data[2].gfile]
+    assert encodings == [data[0].encoding, None, data[2].encoding]

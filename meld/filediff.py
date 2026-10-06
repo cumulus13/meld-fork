@@ -2463,14 +2463,43 @@ class FileDiff(Gtk.Box, MeldDoc):
 
     def revert_pane(self, *extra):
         pane = extra[0]
-        if not self.check_unsaved_changes(self.textbuffer[pane : pane + 1]):
-            return
+        buf = self.textbuffer[pane]
 
-        data = self.textbuffer[pane].data
-        self.set_file(pane, data.gfile, data.encoding)
+        def on_confirm():
+            data = buf.data
+            self.set_file(pane, data.gfile, data.encoding)
+
+        self.confirm_unsaved_change_action(on_confirm=on_confirm, buffers=[buf])
 
     def action_refresh(self, *extra):
-        self.refresh_comparison()
+        """Refresh the comparison, reloading any files changed on disk
+
+        Panes whose files have changed on disk are reloaded (after
+        confirming the discard of any unsaved edits to them), so that
+        refreshing actually picks up external changes rather than only
+        re-diffing stale buffer contents.
+        """
+        stale = [
+            pane
+            for pane, buf in enumerate(self.textbuffer[: self.num_panes])
+            if buf.data.changed_on_disk()
+        ]
+        if not stale:
+            self.refresh_comparison()
+            return
+
+        def on_confirm():
+            gfiles = [None] * self.num_panes
+            encodings = [None] * self.num_panes
+            for pane in stale:
+                data = self.textbuffer[pane].data
+                gfiles[pane] = data.gfile
+                encodings[pane] = data.encoding
+            self.set_files(gfiles, encodings=encodings)
+
+        self.confirm_unsaved_change_action(
+            on_confirm=on_confirm, buffers=[self.textbuffer[p] for p in stale]
+        )
 
     def queue_draw(self, junk=None):
         for t in self.textview:
