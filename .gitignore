@@ -48,3 +48,6 @@ data/styles/meld-dark.style-scheme.xml
 
 # Added entries (1 items)
 *.diff
+
+# Added entries (1 items)
+downloads/
